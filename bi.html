@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>2 Player Goal Game</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+    }
+    #gameCanvas {
+      display: block;
+      background: url('arkaplan.jpg') no-repeat center center;
+      background-size: cover;
+    }
+    .overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background-color: rgba(0,0,0,0.8);
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: Arial, sans-serif;
+      z-index: 2;
+    }
+    .hearts {
+      position: absolute;
+      top: 10px;
+      display: flex;
+      gap: 5px;
+    }
+    .p1-hearts { left: 10px; }
+    .p2-hearts { right: 10px; flex-direction: row-reverse; }
+    .hearts img {
+      width: 30px;
+      height: 30px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      margin-top: 20px;
+    }
+
+    /* 'cagcesur tarafından yapıldı' yazısı */
+    .credits {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      color: white;
+      font-size: 14px;
+      font-family: Arial, sans-serif;
+      opacity: 0.5;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+
+  <div id="startScreen" class="overlay">
+    <h1>2 Kişilik Kale Oyunu</h1>
+    <button onclick="startGame()">Oyuna Başla</button>
+  </div>
+
+  <div id="gameOverScreen" class="overlay" style="display:none;">
+    <h1 id="winnerText"></h1>
+    <button onclick="restartGame()">Yeniden Başla</button>
+  </div>
+
+  <div class="hearts p1-hearts" id="p1Hearts"></div>
+  <div class="hearts p2-hearts" id="p2Hearts"></div>
+
+  <!-- 'cagcesur tarafından yapıldı' yazısı -->
+  <div class="credits">cagcesur tarafından yapıldı</div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    let gameRunning = false;
+    let lastShotTime = 0; // Vuruş gecikmesi için zaman tutucu
+    const shotDelay = 500; // 500ms gecikme (yarım saniye)
+
+    const player1 = { x: 20, y: 200, width: 20, height: 80, up: false, down: false, shoot: false, hearts: 5, speed: 6 };  // Hız arttı
+    const player2 = { x: 760, y: 200, width: 20, height: 80, up: false, down: false, shoot: false, hearts: 5, speed: 6 };  // Hız arttı
+
+    const bullets = [];
+    const keys = {};
+
+    const stickImg = new Image();
+    const ballImg = new Image();
+    const heartImg = 'kalp.png';
+    const brokenHeartImg = 'kırık kalp.png';
+
+    // Resimleri yükleme
+    stickImg.src = 'stick.png';
+    ballImg.src = 'ball.png';
+    const backgroundImg = new Image();
+    backgroundImg.src = 'arkaplan.jpg'; // Arka plan resmi
+
+    // Yükleme kontrolü
+    let imagesLoaded = 0;
+    const totalImages = 3; // Toplam resim sayısı (stick, ball, arka plan)
+
+    function imageLoaded() {
+      imagesLoaded++;
+      if (imagesLoaded === totalImages) {
+        startGame(); // Tüm resimler yüklendiyse oyunu başlat
+      }
+    }
+
+    stickImg.onload = imageLoaded;
+    ballImg.onload = imageLoaded;
+    backgroundImg.onload = imageLoaded;
+
+    // Canvas boyutlarını ayarla
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+
+      // Player 2'nin konumunu sağa sabitle
+      player2.x = canvas.width - player2.width - 20; // Ekranın sağ kısmına çek
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();  // Başlangıçta canvas boyutlarını ayarla
+
+    function drawPlayer(p) {
+      ctx.drawImage(stickImg, p.x, p.y, p.width, p.height);
+    }
+
+    function drawBullets() {
+      bullets.forEach(b => ctx.drawImage(ballImg, b.x, b.y, 15, 15));
+    }
+
+    function movePlayers() {
+      if (player1.up) player1.y -= player1.speed;
+      if (player1.down) player1.y += player1.speed;
+      if (player2.up) player2.y -= player2.speed;
+      if (player2.down) player2.y += player2.speed;
+    }
+
+    // shootBullet fonksiyonu güncellendi: vuruş gecikmesi ve hız artışı
+    function shootBullet(shooter) {
+      const currentTime = Date.now();
+      if (currentTime - lastShotTime < shotDelay) return; // Vuruş gecikmesi
+      lastShotTime = currentTime;
+
+      let dir = shooter === player1 ? 1 : -1;
+      // Topların hızını iki katına çıkar
+      bullets.push({
+        x: shooter.x + (dir === 1 ? shooter.width : -15), // Player1 için doğru mesafe
+        y: shooter.y + shooter.height / 2 - 7,
+        dx: dir * 12 // Hızı iki katına çıkarıyoruz (6'dan 12'ye)
+      });
+    }
+
+    function updateBullets() {
+      for (let i = bullets.length - 1; i >= 0; i--) {
+        const b = bullets[i];
+        b.x += b.dx;
+
+        // Soldaki oyuncu için çarpışma kontrolü
+        if (b.x > player1.x && b.x < player1.x + player1.width && b.y > player1.y && b.y < player1.y + player1.height) {
+          bullets.splice(i, 1);  // Topu sil
+          return;
+        }
+
+        // Sağdaki oyuncu için çarpışma kontrolü
+        if (b.x > player2.x && b.x < player2.x + player2.width && b.y > player2.y && b.y < player2.y + player2.height) {
+          bullets.splice(i, 1);  // Topu sil
+          return;
+        }
+
+        // Eğer top ekran dışına çıkarsa, gol olarak sayılacak
+        if (b.x < 0) {  // Player 1'in hedefi
+          player1.hearts--;
+          updateHearts();
+          bullets.splice(i, 1);
+          checkGameOver();
+        } else if (b.x > canvas.width) {  // Player 2'nin hedefi
+          player2.hearts--;
+          updateHearts();
+          bullets.splice(i, 1);
+          checkGameOver();
+        }
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(backgroundImg, 0, 0, canvas.width, canvas.height); // Arka planı çiz
+      drawPlayer(player1);
+      drawPlayer(player2);
+      drawBullets();
+    }
+
+    function gameLoop() {
+      if (!gameRunning) return;
+      movePlayers();
+      updateBullets();
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    function updateHearts() {
+      const p1Container = document.getElementById('p1Hearts');
+      const p2Container = document.getElementById('p2Hearts');
+      p1Container.innerHTML = '';
+      p2Container.innerHTML = '';
+      for (let i = 0; i < 5; i++) {
+        const img1 = document.createElement('img');
+        img1.src = i < player1.hearts ? heartImg : brokenHeartImg;
+        p1Container.appendChild(img1);
+
+        const img2 = document.createElement('img');
+        img2.src = i < player2.hearts ? heartImg : brokenHeartImg;
+        p2Container.appendChild(img2);
+      }
+    }
+
+    function checkGameOver() {
+      if (player1.hearts <= 0) {
+        endGame('Player 2 Kazandı!');
+      } else if (player2.hearts <= 0) {
+        endGame('Player 1 Kazandı!');
+      }
+    }
+
+    function startGame() {
+      document.getElementById('startScreen').style.display = 'none';
+      gameRunning = true;
+      updateHearts();
+      gameLoop();
+    }
+
+    function endGame(winnerText) {
+      gameRunning = false;
+      document.getElementById('winnerText').innerText = winnerText;
+      document.getElementById('gameOverScreen').style.display = 'flex';
+    }
+
+    function restartGame() {
+      document.location.reload();
+    }
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'w') player1.up = true;
+      if (e.key === 's') player1.down = true;
+      if (e.key === 'd') shootBullet(player1);  // Player1 için top atışı
+      if (e.key === 'ArrowUp') player2.up = true;
+      if (e.key === 'ArrowDown') player2.down = true;
+      if (e.key === 'ArrowLeft') shootBullet(player2);  // Player2 için top atışı
+    });
+
+    document.addEventListener('keyup', e => {
+      if (e.key === 'w') player1.up = false;
+      if (e.key === 's') player1.down = false;
+      if (e.key === 'ArrowUp') player2.up = false;
+      if (e.key === 'ArrowDown') player2.down = false;
+    });
+  </script>
+</body>
+</html>
